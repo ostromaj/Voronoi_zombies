@@ -1,0 +1,1177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Dead Zones: an IB Math AI Voronoi diagram game. Find the centre of the largest empty circle, power up your turrets, survive the zombies.">
+<title>Dead Zones</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Barlow+Semi+Condensed:wght@400;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: one-screen game. Night-ops civil-defense map fills the screen; HUD strip on top; radio panel overlays for questions. Single dark look on purpose. */
+:root {
+  --paper: #161e28;
+  --paper-2: #222d3a;
+  --grid: #3a4a5c;
+  --ink: #e9e2d0;
+  --ink-soft: #9aa6b2;
+  --marker: #d9653b;
+  --hazard: #e8b04a;
+  --mint: #7fa27a;
+  --panel: #1d2632;
+  --line: #0b1016;
+  --good: #3f6b4a;
+  --bad: #6e3a30;
+  --display: "Black Ops One", "Impact", "Arial Black", sans-serif;
+  --body: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "Courier New", monospace;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--paper); color: var(--ink);
+  font-family: var(--body); font-size: 16px;
+  overflow: hidden; user-select: none; -webkit-user-select: none;
+}
+#app {
+  height: 100%; display: flex; flex-direction: column;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 10px;
+  gap: 8px; box-sizing: border-box;
+}
+#hud {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px;
+  font-family: var(--mono); font-size: 14px; color: var(--ink);
+}
+#hud .brand { font-family: var(--display); font-size: 22px; letter-spacing: 0.04em; color: var(--marker); margin-right: auto; }
+#hud .stat { display: flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; }
+#hud .lbl { font-family: var(--body); font-weight: 700; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft); }
+#hearts { letter-spacing: 2px; color: var(--marker); font-size: 16px; }
+#zoneTag { background: var(--hazard); color: var(--line); padding: 2px 8px; border-radius: 3px; }
+.iconbtn {
+  font: 600 13px var(--body); letter-spacing: 0.08em; text-transform: uppercase;
+  background: transparent; color: var(--ink); border: 2px solid var(--ink);
+  padding: 3px 10px; border-radius: 3px; cursor: pointer;
+}
+.iconbtn:focus-visible, .btn:focus-visible, .opt:focus-visible { outline: 3px solid var(--hazard); outline-offset: 2px; }
+#stage { position: relative; flex: 1; min-height: 0; }
+#cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: crosshair; }
+
+/* overlays */
+.overlay {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(8, 12, 18, 0.6); padding: 12px; box-sizing: border-box; overflow-y: auto;
+}
+.card {
+  background: var(--panel); color: var(--ink); border: 3px solid var(--ink);
+  box-shadow: 6px 6px 0 var(--line); border-radius: 4px;
+  width: min(760px, 100%); max-height: 100%; overflow-y: auto; box-sizing: border-box;
+  padding: 18px 20px;
+}
+.card h1 { font-family: var(--display); font-weight: 400; font-size: clamp(40px, 8vw, 72px); line-height: 0.95; margin: 0; color: var(--marker); letter-spacing: 0.02em; text-wrap: balance; }
+.card h2 { font-family: var(--display); font-weight: 400; font-size: 26px; margin: 0 0 6px; text-wrap: balance; }
+.card p { line-height: 1.45; margin: 0; max-width: 62ch; }
+.tag { font: 700 12px var(--body); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-soft); }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.row { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-start; }
+.villain { display: flex; gap: 12px; align-items: center; background: var(--paper-2); border-left: 4px solid var(--marker); padding: 10px 12px; }
+.villain svg { flex: none; }
+.villain p { font-style: italic; }
+.how { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.how div { border: 2px dashed var(--grid); padding: 10px; border-radius: 3px; min-width: 0; }
+.how b { font-family: var(--mono); font-size: 13px; display: block; margin-bottom: 3px; }
+.btn {
+  font: 400 22px var(--display); letter-spacing: 0.05em;
+  background: var(--hazard); color: var(--line); border: 3px solid var(--line);
+  padding: 8px 22px; border-radius: 3px; cursor: pointer; box-shadow: 3px 3px 0 var(--line);
+}
+.btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--line); }
+.btn.alt { background: var(--panel); color: var(--ink); }
+.btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+/* question panel */
+.qwrap { display: grid; grid-template-columns: minmax(0, 330px) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 640px) { .qwrap { grid-template-columns: 1fr; } }
+#mini { width: 100%; max-width: 330px; aspect-ratio: 1 / 1; background: var(--paper); border: 2px solid var(--grid); border-radius: 3px; touch-action: none; }
+#mini.clickable { cursor: crosshair; }
+.qtext { font-size: 18px; line-height: 1.4; }
+.qtext .m { font-family: var(--mono); font-size: 15px; background: var(--paper-2); padding: 1px 5px; border-radius: 3px; white-space: nowrap; }
+.opts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+@media (max-width: 420px) { .opts { grid-template-columns: 1fr; } }
+.opt {
+  font: 500 15px var(--mono); text-align: left; background: var(--paper); color: var(--ink);
+  border: 2px solid var(--grid); padding: 10px 12px; border-radius: 3px; cursor: pointer; min-width: 0;
+}
+.opt:hover:not([disabled]) { background: var(--paper-2); border-color: var(--hazard); }
+.opt.right { background: var(--good); border-color: #8fc28a; }
+.opt.wrong { background: var(--bad); border-color: var(--marker); text-decoration: line-through; }
+.opt[disabled] { cursor: default; }
+.explain { background: var(--paper-2); border-left: 4px solid var(--hazard); padding: 10px 12px; font-size: 15px; line-height: 1.5; }
+.explain .m { font-family: var(--mono); font-size: 14px; }
+.verdict { font-family: var(--display); font-size: 24px; }
+.verdict.good { color: #8fc28a; }
+.verdict.bad { color: var(--marker); }
+.pickinfo { font-family: var(--mono); font-size: 14px; color: var(--ink-soft); min-height: 1.4em; }
+.big { font-family: var(--mono); font-size: 40px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.statgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.statgrid div { border: 2px solid var(--grid); padding: 8px 10px; border-radius: 3px; }
+.toast {
+  position: absolute; left: 50%; top: 14px; transform: translateX(-50%);
+  background: var(--hazard); color: var(--line); font: 600 16px var(--body); letter-spacing: 0.04em;
+  padding: 6px 14px; border-radius: 3px; pointer-events: none; white-space: nowrap; max-width: 92%; overflow: hidden; text-overflow: ellipsis;
+}
+@media (prefers-reduced-motion: reduce) { .btn:active { transform: none; } }
+
+/* scout bar sits above the map so it never covers nests on the top edge */
+#stage { display: flex; flex-direction: column; gap: 8px; }
+#cvWrap { position: relative; flex: 1; min-height: 0; }
+.scoutbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; background: var(--panel); border: 2px solid var(--grid); border-left: 4px solid var(--hazard); padding: 9px 14px; }
+.sb-main { flex: 1 1 380px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.sb-text { font-size: 17px; line-height: 1.35; }
+.sb-hint { font-size: 14px; line-height: 1.4; color: var(--ink-soft); max-width: 90ch; }
+.sb-hint b { color: var(--ink); }
+.sb-side { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sb-coord { font-family: var(--mono); font-size: 14px; color: var(--hazard); font-variant-numeric: tabular-nums; }
+.sb-verdict { font-family: var(--display); font-size: 21px; letter-spacing: 0.03em; }
+.sb-verdict.good { color: #8fc28a; } .sb-verdict.bad { color: var(--marker); }
+.scoutbar .btn { font-size: 18px; padding: 6px 16px; }
+</style>
+
+
+</head>
+<body>
+<div id="app">
+  <div id="hud">
+    <span class="brand">DEAD ZONES</span>
+    <span class="stat"><span class="lbl">Wave</span><span id="hWave">1</span></span>
+    <span class="stat"><span class="lbl" id="hTimeLbl">Scout</span><span id="hTime">30</span></span>
+    <span class="stat"><span class="lbl">Score</span><span id="hScore">0</span></span>
+    <span class="stat"><span class="lbl">Health</span><span id="hearts">♥♥♥♥</span></span>
+    <span class="stat"><span class="lbl">Turrets</span><span id="zoneTag">×1</span></span>
+    <button class="iconbtn" id="muteBtn" type="button">Sound: on</button>
+  </div>
+  <div id="stage">
+    <div id="scoutBar" class="scoutbar" hidden>
+      <div class="sb-main">
+        <span class="tag" id="sbTag">Wave 1 · Scout</span>
+        <div class="sb-text" id="sbText"></div>
+        <div class="sb-hint" id="sbHint"></div>
+      </div>
+      <div class="sb-side">
+        <span class="sb-coord" id="sbCoord">Tap the map to drop your beacon</span>
+        <button class="btn" id="sbBtn" type="button" disabled>LOCK IN</button>
+      </div>
+    </div>
+    <div id="cvWrap">
+      <canvas id="cv"></canvas>
+      <div id="toast" class="toast" hidden></div>
+    </div>
+
+    <div id="titleScreen" class="overlay">
+      <div class="card stack">
+        <span class="tag">IB Math AI · Voronoi diagrams · Largest empty circle</span>
+        <h1>DEAD ZONES</h1>
+        <div class="villain">
+          <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true"><path d="M6 64 L10 44 Q32 36 54 44 L58 64 Z" fill="#e9e2d0" stroke="#0b1016" stroke-width="3"/><path d="M26 42 L32 54 L38 42" fill="#c8bfa8" stroke="#0b1016" stroke-width="2.5"/><path d="M30 46 L32 58 L34 46 Z" fill="#d9653b" stroke="#0b1016" stroke-width="1.5"/><rect x="44" y="48" width="7" height="3" fill="#0b1016"/><rect x="45" y="44" width="2" height="5" fill="#4a535e"/><path d="M12 18 Q10 6 20 8 Q22 2 30 6 Q36 0 42 6 Q52 4 52 16" fill="#9aa6b2" stroke="#0b1016" stroke-width="2.5"/><circle cx="32" cy="27" r="16" fill="#7fa27a" stroke="#0b1016" stroke-width="3"/><path d="M15 23 L49 23" stroke="#0b1016" stroke-width="3"/><circle cx="25" cy="24" r="6" fill="#e8b04a" stroke="#0b1016" stroke-width="3"/><circle cx="39" cy="24" r="6" fill="#e8b04a" stroke="#0b1016" stroke-width="3"/><circle cx="26" cy="24" r="2" fill="#0b1016"/><circle cx="38" cy="24" r="2" fill="#0b1016"/><path d="M23 35 Q32 41 41 34" fill="#0b1016" stroke="#0b1016" stroke-width="2.5" stroke-linecap="round"/><path d="M27 36 v2 M31 37 v2 M35 36 v2" stroke="#e9e2d0" stroke-width="1.6"/><path d="M42 30 L47 33 M43 33 L45 30 M45 34 L47 31" stroke="#0b1016" stroke-width="1.4"/></svg>
+          <p>"I am Dr. Decay. My nests are all over town. Set up camp anywhere you like... but the closer you are to a nest, the sooner my horde finds you."</p>
+        </div>
+        <div class="how">
+          <div><b>1 · SCOUT</b>Drop a beacon at the safest spot in town: the point farthest from every nest. That's the centre of the largest empty circle.</div>
+          <div><b>2 · POWER UP</b>The closer your beacon is to the true centre, the stronger your turrets: up to ×3.</div>
+          <div><b>3 · DEFEND</b>Your camp is built at the beacon. Zombies pour out of the nests. Move with WASD or arrows (or hold the mouse), Space to dash, grab cans and batteries.</div>
+          <div><b>4 · RADIO</b>Between waves, answer Dr. Decay's question. Right answers heal you. Wrong ones send extra zombies.</div>
+        </div>
+        <div class="row" style="align-items:center">
+          <button class="btn" id="startBtn" type="button">START WAVE 1</button>
+          <span class="pickinfo" id="bestLine"></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="qScreen" class="overlay" hidden>
+      <div class="card stack">
+        <div class="villain" id="qTaunt"></div>
+        <div class="qwrap">
+          <canvas id="mini" width="660" height="660"></canvas>
+          <div class="stack" style="min-width:0">
+            <span class="tag" id="qTag">Radio check</span>
+            <div class="qtext" id="qText"></div>
+            <div class="opts" id="qOpts"></div>
+            <div class="pickinfo" id="qPick"></div>
+            <div class="row" id="qLockRow" hidden><button class="btn" id="qLock" type="button" disabled>LOCK IT IN</button></div>
+            <div id="qResult" class="stack" hidden>
+              <div class="verdict" id="qVerdict"></div>
+              <div class="explain" id="qExplain"></div>
+              <div class="row"><button class="btn" id="qNext" type="button">NEXT WAVE</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="overScreen" class="overlay" hidden>
+      <div class="card stack">
+        <span class="tag">Overrun</span>
+        <h2>The horde got you on wave <span id="oWave">1</span></h2>
+        <div class="statgrid">
+          <div><span class="tag">Score</span><div class="big" id="oScore">0</div></div>
+          <div><span class="tag">Bullseyes</span><div class="big" id="oBulls">0</div></div>
+          <div><span class="tag">Radio answers</span><div class="big" id="oQs">0/0</div></div>
+          <div><span class="tag">Personal best</span><div class="big" id="oBest">0</div></div>
+        </div>
+        <p id="oLine"></p>
+        <div class="row"><button class="btn" id="againBtn" type="button">PLAY AGAIN</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script id="gen">
+/* ===== Question generators (pure math, no DOM). Coordinates are integers on a 0..10 grid. ===== */
+var DZ = (function () {
+  function ri(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); }
+  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+  function shuffle(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+  function d2(p, q) { return (p[0] - q[0]) * (p[0] - q[0]) + (p[1] - q[1]) * (p[1] - q[1]); }
+  function inR(p) { return p[0] >= 0 && p[0] <= 10 && p[1] >= 0 && p[1] <= 10; }
+  // number format: multiples of 0.5 only, with a real minus sign
+  function f(n) { if (Object.is(n, -0)) n = 0; var s = String(Math.abs(n)); return (n < 0 ? "−" : "") + s; }
+  function pt(p) { return "(" + f(p[0]) + ", " + f(p[1]) + ")"; }
+  function eq(m, c) {
+    if (m === 0) return "y = " + f(c);
+    var mx = m === 1 ? "x" : m === -1 ? "−x" : f(m) + "x";
+    var cs = c > 0 ? " + " + f(c) : c < 0 ? " − " + f(-c) : "";
+    return "y = " + mx + cs;
+  }
+  function sq(n) { return n < 0 ? "(" + f(n) + ")²" : f(n) + "²"; }
+  function d2work(p, q) { return sq(p[0] - q[0]) + " + " + sq(p[1] - q[1]) + " = " + d2(p, q); }
+
+  // A to B = (2a, 2b), so the midpoint is a lattice point.
+  // Gradients stay in {±1, ±2, ±0.5} so every number displays exactly.
+  var DIRS = [[1, 1], [1, -1], [2, 1], [1, 2], [2, -1], [1, -2], [2, 2], [2, -2]];
+  var AXIS = [[1, 0], [2, 0], [3, 0], [0, 1], [0, 2], [0, 3]];
+  function pair(allowAxis) {
+    for (var k = 0; k < 500; k++) {
+      var dir = (allowAxis && Math.random() < 0.2) ? pick(AXIS) : pick(DIRS);
+      var a = dir[0], b = dir[1];
+      if (Math.random() < 0.5) { a = -a; b = -b; }
+      var A = [ri(0, 10), ri(0, 10)];
+      var B = [A[0] + 2 * a, A[1] + 2 * b];
+      if (!inR(B)) continue;
+      return { A: A, B: B, a: a, b: b, M: [A[0] + a, A[1] + b] };
+    }
+  }
+  function addDistractors(correct, cands, n) {
+    var seen = {}; seen[correct] = 1; var out = [];
+    for (var i = 0; i < cands.length && out.length < n; i++) { if (!seen[cands[i]]) { seen[cands[i]] = 1; out.push(cands[i]); } }
+    return out;
+  }
+  function mc(correct, distractors) {
+    var opts = shuffle([correct].concat(distractors));
+    return { options: opts, answer: opts.indexOf(correct) };
+  }
+
+  function qMidpoint() {
+    var P = pair(true), A = P.A, B = P.B, M = P.M;
+    var c = pt(M);
+    var ds = addDistractors(c, [
+      pt([(B[0] - A[0]) / 2, (B[1] - A[1]) / 2]),
+      pt([M[1], M[0]]),
+      pt([A[0] + B[0], A[1] + B[1]]),
+      pt([M[0] + 1, M[1]]), pt([M[0], M[1] - 1]), pt([M[0] - 1, M[1] + 1])
+    ], 3);
+    var o = mc(c, ds);
+    return {
+      type: "midpoint", kind: "mc", points: { A: A, B: B }, segment: ["A", "B"],
+      tag: "Midpoint",
+      text: "Safe houses <b>A</b> <span class='m'>" + pt(A) + "</span> and <b>B</b> <span class='m'>" + pt(B) + "</span> need a wall between them. The wall passes through their midpoint. Where is it?",
+      options: o.options, answer: o.answer, reveal: { A: A, B: B, mark: M },
+      explain: "Midpoint = <span class='m'>((" + f(A[0]) + " + " + f(B[0]) + ")/2, (" + f(A[1]) + " + " + f(B[1]) + ")/2) = " + pt(M) + "</span>. Average the x's, average the y's."
+    };
+  }
+
+  function qGradient() {
+    var P = pair(false), A = P.A, B = P.B, a = P.a, b = P.b;
+    var mAB = b / a, mPerp = -a / b;
+    var c = f(mPerp);
+    var ds = addDistractors(c, [f(mAB), f(-mAB), f(a / b), f(-mPerp), f(mPerp * 2), f(mAB + 1)], 3);
+    var o = mc(c, ds);
+    return {
+      type: "gradient", kind: "mc", points: { A: A, B: B }, segment: ["A", "B"],
+      tag: "Perpendicular gradient",
+      text: "The wall between <b>A</b> <span class='m'>" + pt(A) + "</span> and <b>B</b> <span class='m'>" + pt(B) + "</span> is the perpendicular bisector of AB. What is the gradient of the wall?",
+      options: o.options, answer: o.answer, reveal: { A: A, B: B, mark: P.M },
+      explain: "Gradient of AB = <span class='m'>(" + f(B[1]) + " − " + f(A[1]) + ")/(" + f(B[0]) + " − " + f(A[0]) + ") = " + f(mAB) + "</span>. Perpendicular means negative reciprocal, so the wall's gradient is <span class='m'>" + f(mPerp) + "</span>. Check: " + f(mAB) + " × " + f(mPerp) + " = −1."
+    };
+  }
+
+  function qBisector() {
+    var P = pair(true), A = P.A, B = P.B, a = P.a, b = P.b, M = P.M;
+    var correct, cands;
+    if (b === 0) { // AB horizontal, wall vertical
+      correct = "x = " + f(M[0]);
+      cands = ["y = " + f(M[1]), "x = " + f(A[0]), "x = " + f(B[0]), "y = " + f(M[0]), "x = " + f(M[1])];
+    } else if (a === 0) { // AB vertical, wall horizontal
+      correct = "y = " + f(M[1]);
+      cands = ["x = " + f(M[0]), "y = " + f(A[1]), "y = " + f(B[1]), "x = " + f(M[1]), "y = " + f(M[0])];
+    } else {
+      var m = -a / b, cc = M[1] - m * M[0];
+      var mAB = b / a;
+      correct = eq(m, cc);
+      cands = [
+        eq(mAB, M[1] - mAB * M[0]),
+        eq(m, A[1] - m * A[0]),
+        eq(m, cc === 0 ? 2 : -cc),
+        eq(-m, M[1] + m * M[0]),
+        eq(m, cc + 1), eq(m, cc - 2)
+      ];
+    }
+    var ds = addDistractors(correct, cands, 3);
+    var o = mc(correct, ds);
+    var ex;
+    if (b === 0) ex = "AB is horizontal, so the wall is vertical through the midpoint <span class='m'>" + pt(M) + "</span>: <span class='m'>x = " + f(M[0]) + "</span>.";
+    else if (a === 0) ex = "AB is vertical, so the wall is horizontal through the midpoint <span class='m'>" + pt(M) + "</span>: <span class='m'>y = " + f(M[1]) + "</span>.";
+    else {
+      var m2 = -a / b;
+      ex = "1. Midpoint <span class='m'>" + pt(M) + "</span>. 2. Gradient of AB = <span class='m'>" + f(b / a) + "</span>, so the wall's gradient is <span class='m'>" + f(m2) + "</span>. 3. <span class='m'>y − " + f(M[1]) + " = " + f(m2) + "(x − " + f(M[0]) + ")</span>, which rearranges to <span class='m'>" + correct + "</span>.";
+    }
+    return {
+      type: "bisector", kind: "mc", points: { A: A, B: B }, segment: ["A", "B"],
+      tag: "Build the wall",
+      text: "Find the equation of the perpendicular bisector of safe houses <b>A</b> <span class='m'>" + pt(A) + "</span> and <b>B</b> <span class='m'>" + pt(B) + "</span>. Zombies can't cross it.",
+      options: o.options, answer: o.answer, reveal: { A: A, B: B, cells: true, mark: M },
+      explain: ex
+    };
+  }
+
+  var LET = ["A", "B", "C", "D"];
+  function qCell() {
+    for (var k = 0; k < 2000; k++) {
+      var n = Math.random() < 0.5 ? 3 : 4, S = [], ok = true;
+      for (var i = 0; i < n; i++) {
+        var s = [ri(0, 10), ri(0, 10)];
+        for (var j = 0; j < S.length; j++) if (d2(s, S[j]) < 9) ok = false;
+        S.push(s);
+      }
+      if (!ok) continue;
+      var P = [ri(0, 10), ri(0, 10)];
+      var ds = S.map(function (s) { return d2(P, s); });
+      var sorted = ds.slice().sort(function (x, y) { return x - y; });
+      if (sorted[0] === 0 || sorted[1] - sorted[0] < 3) continue;
+      var ans = ds.indexOf(sorted[0]);
+      var points = {}; S.forEach(function (s, i) { points[LET[i]] = s; });
+      var work = S.map(function (s, i) { return "<span class='m'>" + LET[i] + ": " + d2work(P, s) + "</span>"; }).join("<br>");
+      return {
+        type: "cell", kind: "site", points: points, survivor: P,
+        tag: "Which zone?",
+        text: "A survivor is radioing from <span class='m'>" + pt(P) + "</span>. Which safe house's zone are they in? <b>Tap that safe house</b> on the map (or pick below).",
+        options: LET.slice(0, n), answer: ans, reveal: { cells: true },
+        explain: "A point is in the cell of its <b>nearest</b> site. Compare squared distances from the survivor:<br>" + work + "<br>Smallest is <b>" + LET[ans] + "</b>."
+      };
+    }
+  }
+
+  function qBoundary() {
+    for (var k = 0; k < 2000; k++) {
+      var P = pair(true), A = P.A, B = P.B, a = P.a, b = P.b, M = P.M;
+      var t = pick([-2, -1, 1, 2]);
+      var Q = [M[0] - b * t, M[1] + a * t];
+      if (!inR(Q)) continue;
+      var on = Math.random() < 0.5;
+      if (!on) {
+        var off = pick([[1, 0], [0, 1], [-1, 0], [0, -1]]);
+        Q = [Q[0] + off[0], Q[1] + off[1]];
+        if (!inR(Q) || d2(Q, A) === d2(Q, B)) continue;
+      }
+      if ((d2(Q, A) === d2(Q, B)) !== on) continue;
+      var dA = d2(Q, A), dB = d2(Q, B);
+      return {
+        type: "boundary", kind: "mc", points: { A: A, B: B, Q: Q }, segment: ["A", "B"],
+        tag: "Standing on the line?",
+        text: "Dr. Decay says point <b>Q</b> <span class='m'>" + pt(Q) + "</span> is exactly on the wall between <b>A</b> <span class='m'>" + pt(A) + "</span> and <b>B</b> <span class='m'>" + pt(B) + "</span>. Is he right?",
+        options: ["Yes, Q is on the wall", "No, Q is closer to A", "No, Q is closer to B"],
+        answer: on ? 0 : (dA < dB ? 1 : 2), reveal: { A: A, B: B, Q: Q, cells: true },
+        explain: "A point is on the wall exactly when it's the same distance from both sites.<br><span class='m'>QA² = " + d2work(Q, A) + "</span><br><span class='m'>QB² = " + d2work(Q, B) + "</span><br>" +
+          (on ? "Equal, so Q is on the wall." : "Not equal, so Q is closer to " + (dA < dB ? "A" : "B") + ".")
+      };
+    }
+  }
+
+  var RINGS = { 5: [], 10: [], 13: [], 25: [] };
+  (function () { for (var r in RINGS) for (var x = -5; x <= 5; x++) for (var y = -5; y <= 5; y++) if (x * x + y * y === +r) RINGS[r].push([x, y]); })();
+  function qVertex() {
+    for (var k = 0; k < 5000; k++) {
+      var r2 = pick([5, 10, 13, 25, 25]), ring = RINGS[r2];
+      var C = [ri(2, 8), ri(2, 8)];
+      var v = shuffle(ring).slice(0, 3);
+      var S = v.map(function (u) { return [C[0] + u[0], C[1] + u[1]]; });
+      if (!S.every(inR)) continue;
+      var area2 = Math.abs((S[1][0] - S[0][0]) * (S[2][1] - S[0][1]) - (S[2][0] - S[0][0]) * (S[1][1] - S[0][1]));
+      if (area2 < 8) continue;
+      if (d2(S[0], S[1]) < 5 || d2(S[1], S[2]) < 5 || d2(S[0], S[2]) < 5) continue;
+      var r = Math.sqrt(r2), rs = Number.isInteger(r) ? String(r) : "√" + r2 + " ≈ " + r.toFixed(2);
+      return {
+        type: "vertex", kind: "grid", points: { A: S[0], B: S[1], C: S[2] }, answerPoint: C,
+        tag: "Toxic waste dump",
+        text: "Dr. Decay is dumping toxic waste at the <b>Voronoi vertex</b> of safe houses A, B and C: the one point that's equally far from all three. <b>Tap that point</b> on the map, then lock it in.",
+        reveal: { cells: true, mark: C, circle: r },
+        explain: "The vertex is <span class='m'>" + pt(C) + "</span>. Check the squared distances:<br>" +
+          ["A", "B", "C"].map(function (L, i) { return "<span class='m'>" + L + ": " + d2work(C, S[i]) + "</span>"; }).join("<br>") +
+          "<br>All equal, so every safe house is <span class='m'>" + rs + "</span> units away. (It's where the three perpendicular bisectors meet.)"
+      };
+    }
+  }
+
+  function forWave(w) {
+    var pool;
+    if (w <= 1) pool = [qMidpoint, qGradient];
+    else if (w === 2) pool = [qGradient, qBisector, qCell];
+    else if (w === 3) pool = [qBisector, qCell, qBoundary];
+    else pool = [qBisector, qCell, qBoundary, qVertex, qVertex];
+    return pick(pool)();
+  }
+  return { forWave: forWave, gens: { qMidpoint: qMidpoint, qGradient: qGradient, qBisector: qBisector, qCell: qCell, qBoundary: qBoundary, qVertex: qVertex }, d2: d2 };
+})();
+</script>
+<script id="gen2">
+/* ===== Largest empty circle (pure math, no DOM). Map is 0..16 by 0..10; nests sit on integer points. ===== */
+var LEC = (function () {
+  var W = 16, H = 10;
+  function ri(a, b) { return a + Math.floor(Math.random() * (b - a + 1)); }
+  function d(p, q) { return Math.hypot(p[0] - q[0], p[1] - q[1]); }
+  function circum(a, b, c) {
+    var D = 2 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
+    if (Math.abs(D) < 1e-9) return null;
+    var a2 = a[0] * a[0] + a[1] * a[1], b2 = b[0] * b[0] + b[1] * b[1], c2 = c[0] * c[0] + c[1] * c[1];
+    return [(a2 * (b[1] - c[1]) + b2 * (c[1] - a[1]) + c2 * (a[1] - b[1])) / D, (a2 * (c[0] - b[0]) + b2 * (a[0] - c[0]) + c2 * (b[0] - a[0])) / D];
+  }
+  // Voronoi vertices inside the map: circumcentres of 3 nests with no nest strictly closer
+  function vertices(S) {
+    var out = [];
+    for (var i = 0; i < S.length; i++) for (var j = i + 1; j < S.length; j++) for (var k = j + 1; k < S.length; k++) {
+      var c = circum(S[i], S[j], S[k]); if (!c) continue;
+      if (c[0] < 0 || c[0] > W || c[1] < 0 || c[1] > H) continue;
+      var r = d(c, S[i]), empty = true;
+      for (var m = 0; m < S.length; m++) if (m !== i && m !== j && m !== k && d(c, S[m]) < r - 1e-9) { empty = false; break; }
+      if (empty) out.push({ c: c, r: r, tri: [i, j, k] });
+    }
+    out.sort(function (a, b) { return b.r - a.r; });
+    return out;
+  }
+  function nearest(S, p) { var best = 1e9; for (var i = 0; i < S.length; i++) best = Math.min(best, d(S[i], p)); return best; }
+  // brute-force max of "distance to nearest nest" over the whole map
+  function gridMax(S, step) {
+    var best = 0, at = null;
+    for (var x = 0; x <= W + 1e-9; x += step) for (var y = 0; y <= H + 1e-9; y += step) { var v = nearest(S, [x, y]); if (v > best) { best = v; at = [x, y]; } }
+    return { r: best, at: at };
+  }
+  // Exact best spot on the map's edge: corners, or where a wall between two nests meets the edge.
+  function boundaryMax(S) {
+    var cand = [[0, 0], [W, 0], [0, H], [W, H]];
+    for (var i = 0; i < S.length; i++) for (var j = i + 1; j < S.length; j++) {
+      var A = S[i], B = S[j], mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2, dx = B[0] - A[0], dy = B[1] - A[1];
+      // points P with (P - M) . (B - A) = 0
+      if (Math.abs(dy) > 1e-12) { [0, W].forEach(function (x) { var y = my - dx * (x - mx) / dy; if (y >= 0 && y <= H) cand.push([x, y]); }); }
+      if (Math.abs(dx) > 1e-12) { [0, H].forEach(function (y) { var x = mx - dy * (y - my) / dx; if (x >= 0 && x <= W) cand.push([x, y]); }); }
+    }
+    var best = 0, at = null;
+    cand.forEach(function (c) { var v = nearest(S, c); if (v > best) { best = v; at = c; } });
+    return { r: best, at: at };
+  }
+  // Six nests sit along the edges ("in the woods"), so the safest spot is inside town.
+  // Interior nests (1 to 3) are what make each wave's puzzle different and harder.
+  function count(wave) { return 6 + Math.min(3, 1 + Math.floor((wave - 1) / 2)); }
+  function make(wave) {
+    var inner = count(wave) - 6;
+    for (var tries = 0; tries < 20000; tries++) {
+      var S = [[ri(1, 6), 0], [ri(10, 15), 0], [ri(1, 6), H], [ri(10, 15), H], [0, ri(2, 8)], [W, ri(2, 8)]], ok = true;
+      var guard = 0;
+      while (S.length < 6 + inner && guard++ < 200) {
+        var p = [ri(2, 14), ri(2, 8)];
+        for (var i = 0; i < S.length; i++) if (d(p, S[i]) < 3) { p = null; break; }
+        if (p) S.push(p);
+      }
+      if (S.length < 6 + inner) continue;
+      var V = vertices(S); if (!V.length) continue;
+      var best = V[0];
+      if (best.c[0] < 1.5 || best.c[0] > W - 1.5 || best.c[1] < 1.5 || best.c[1] > H - 1.5) continue;
+      if (best.r < 2.2) continue;
+      if (V.length > 1 && best.r - V[1].r < 0.5) continue;
+      var b = boundaryMax(S);
+      if (best.r < b.r + 0.3) continue; // an edge spot is as safe or safer: reject
+      return { nests: S, best: best, second: V[1] || null, edge: b, vertices: V, tries: tries };
+    }
+    return null;
+  }
+  return { make: make, vertices: vertices, nearest: nearest, gridMax: gridMax, boundaryMax: boundaryMax, d: d, W: W, H: H };
+})();
+</script>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var cv = $("cv"), ctx = cv.getContext("2d");
+  var mini = $("mini"), mctx = mini.getContext("2d");
+  var W = 16, H = 10;
+  var C = { paper: "#161e28", grid: "#3a4a5c", ink: "#e9e2d0", soft: "#9aa6b2", marker: "#d9653b", hazard: "#e8b04a", mint: "#7fa27a", line: "#0b1016", good: "#8fc28a" };
+  var ZONE = ["#8a4b3c", "#3e5f80", "#8a7340", "#4f6e4a", "#6a4f7a", "#8a5f3a", "#4c6f78", "#7a4f5e", "#5f6a3e"];
+  var ZONE_EDGE = ["#e08a73", "#7fa7d1", "#d8b968", "#93bf86", "#b393cf", "#dba06c", "#86c0c9", "#d494a8", "#b8c47f"];
+  var LET = "ABCDEFGHI".split("");
+  var DEFEND_T = 30, SCOUT_T = 35;
+  var TIERS = [
+    { max: 0.35, name: "BULLSEYE", mult: 3, pts: 300 },
+    { max: 0.8, name: "CLOSE", mult: 2, pts: 180 },
+    { max: 1.5, name: "NEAR", mult: 1.5, pts: 80 },
+    { max: 1e9, name: "OFF TARGET", mult: 1, pts: 0 }
+  ];
+  var reduceMotion = false; try { reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+  function loadBest() { try { return +localStorage.getItem("dz_best") || 0; } catch (e) { return 0; } }
+  function saveBest(v) { try { localStorage.setItem("dz_best", String(v)); } catch (e) {} }
+  function f1(n) { var s = (Math.round(n * 10) / 10).toFixed(1); return s.replace("-", "−"); }
+  function f2(n) { return n.toFixed(2); }
+
+  // ---- sound ----
+  var actx = null, muted = false;
+  function beep(freq, dur, type, vol) {
+    if (muted) return;
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      var o = actx.createOscillator(), g = actx.createGain();
+      o.type = type || "square"; o.frequency.value = freq;
+      g.gain.setValueAtTime(vol || 0.04, actx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + dur);
+      o.connect(g); g.connect(actx.destination); o.start(); o.stop(actx.currentTime + dur);
+    } catch (e) {}
+  }
+  $("muteBtn").onclick = function () { muted = !muted; this.textContent = "Sound: " + (muted ? "off" : "on"); };
+
+  // ---- state ----
+  var S;
+  function newRun() {
+    S = { phase: "title", wave: 1, score: 0, hearts: 4, maxHearts: 6, asked: 0, right: 0, bulls: 0, bonusZ: 0,
+      map: null, nests: [], beacon: null, dragging: false, hover: null, scoutT: SCOUT_T, tier: TIERS[3], err: 0,
+      camp: [], p: { x: 8, y: 5, inv: 0, dash: 0, dashCd: 0, face: 1 }, zs: [], cans: [], bats: [], beams: [], pops: [],
+      t: DEFEND_T, spawnT: 1, batT: 4, combo: 0, comboT: 0, shake: 0, overdrive: 0, nestI: 0 };
+  }
+  function aids() {
+    if (S.wave <= 2) return { fill: true, edges: true, circle: true };
+    if (S.wave <= 4) return { fill: false, edges: true, circle: false };
+    return { fill: false, edges: false, circle: false };
+  }
+
+  // ---- canvas ----
+  var scale = 40, ox = 0, oy = 0, dpr = 1, cellCache = null, cellMode = "";
+  function resize() {
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    var r = cv.getBoundingClientRect();
+    cv.width = Math.max(1, Math.round(r.width * dpr)); cv.height = Math.max(1, Math.round(r.height * dpr));
+    scale = Math.min(cv.width / (W + 1.0), cv.height / (H + 1.0));
+    ox = (cv.width - W * scale) / 2; oy = (cv.height - H * scale) / 2;
+    cellCache = null;
+  }
+  window.addEventListener("resize", resize);
+  function sx(x) { return ox + x * scale; }
+  function sy(y) { return oy + (H - y) * scale; }
+  function nearestNest(x, y) { var b = 0, bd = 1e9; for (var i = 0; i < S.nests.length; i++) { var dx = x - S.nests[i][0], dy = y - S.nests[i][1], d = dx * dx + dy * dy; if (d < bd) { bd = d; b = i; } } return b; }
+  function nearestDist(x, y) { var i = nearestNest(x, y); return Math.hypot(x - S.nests[i][0], y - S.nests[i][1]); }
+
+  function buildCells(fill, edges) {
+    var off = document.createElement("canvas"); off.width = Math.ceil(W * scale); off.height = Math.ceil(H * scale);
+    var o = off.getContext("2d");
+    if (fill) {
+      var res = 6 * dpr, cw = Math.ceil(off.width / res), ch = Math.ceil(off.height / res);
+      o.globalAlpha = 0.72;
+      for (var j = 0; j < ch; j++) for (var i = 0; i < cw; i++) {
+        var wx = (i + 0.5) * res / scale, wy = H - (j + 0.5) * res / scale;
+        o.fillStyle = ZONE[nearestNest(wx, wy) % ZONE.length]; o.fillRect(i * res, j * res, res + 1, res + 1);
+      }
+      o.globalAlpha = 1;
+    }
+    if (edges) {
+      o.lineWidth = 2.5 * dpr; o.strokeStyle = C.ink; o.setLineDash([9 * dpr, 6 * dpr]); o.lineCap = "round";
+      var N = S.nests;
+      for (var a = 0; a < N.length; a++) for (var b = a + 1; b < N.length; b++) {
+        var A = N[a], B = N[b], mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2, dx = -(B[1] - A[1]), dy = B[0] - A[0], L = Math.hypot(dx, dy); dx /= L; dy /= L;
+        var drawing = false; o.beginPath();
+        for (var s = -500; s <= 500; s++) {
+          var t = s * 0.04, px = mx + dx * t, py = my + dy * t, ok = false;
+          if (px >= 0 && px <= W && py >= 0 && py <= H) {
+            var da = (px - A[0]) * (px - A[0]) + (py - A[1]) * (py - A[1]); ok = true;
+            for (var c = 0; c < N.length; c++) { if (c === a || c === b) continue; if ((px - N[c][0]) * (px - N[c][0]) + (py - N[c][1]) * (py - N[c][1]) < da - 1e-9) { ok = false; break; } }
+          }
+          var X = px * scale, Y = (H - py) * scale;
+          if (ok) { if (!drawing) { o.moveTo(X, Y); drawing = true; } else o.lineTo(X, Y); } else drawing = false;
+        }
+        o.stroke();
+      }
+    }
+    cellCache = off;
+  }
+
+  // ---- input ----
+  var keys = {}, pointer = null;
+  function toWorld(e) { var r = cv.getBoundingClientRect(); var px = (e.clientX - r.left) * dpr, py = (e.clientY - r.top) * dpr; return { x: (px - ox) / scale, y: H - (py - oy) / scale }; }
+  function snap(v, lo, hi) { return Math.max(lo, Math.min(hi, Math.round(v * 10) / 10)); }
+  function setBeacon(w) { S.beacon = [snap(w.x, 0, W), snap(w.y, 0, H)]; $("sbBtn").disabled = false; scoutText(); }
+  window.addEventListener("keydown", function (e) {
+    var k = e.key.toLowerCase(); keys[k] = true;
+    if (!S) return;
+    if (S.phase === "scout") {
+      var step = e.shiftKey ? 0.5 : 0.1, b = S.beacon || [8, 5], moved = true;
+      if (k === "arrowleft") b = [b[0] - step, b[1]]; else if (k === "arrowright") b = [b[0] + step, b[1]];
+      else if (k === "arrowup") b = [b[0], b[1] + step]; else if (k === "arrowdown") b = [b[0], b[1] - step]; else moved = false;
+      if (moved) { e.preventDefault(); setBeacon({ x: b[0], y: b[1] }); }
+      if (k === "enter" && S.beacon) { e.preventDefault(); lockBeacon(); }
+      return;
+    }
+    if (S.phase === "defend") {
+      if (k === " " || k.indexOf("arrow") === 0) e.preventDefault();
+      if (k === " ") dash();
+    }
+  });
+  window.addEventListener("keyup", function (e) { keys[e.key.toLowerCase()] = false; });
+  cv.addEventListener("pointerdown", function (e) {
+    if (!S) return;
+    try { cv.setPointerCapture(e.pointerId); } catch (er) {}
+    var w = toWorld(e);
+    if (S.phase === "scout") { if (w.x >= -0.3 && w.x <= W + 0.3 && w.y >= -0.3 && w.y <= H + 0.3) { S.dragging = true; setBeacon(w); beep(500, 0.04, "square", 0.02); } return; }
+    if (S.phase === "defend") pointer = w;
+  });
+  cv.addEventListener("pointermove", function (e) {
+    if (!S) return; var w = toWorld(e);
+    S.hover = w;
+    if (S.phase === "scout" && S.dragging) setBeacon(w);
+    if (S.phase === "defend" && pointer) pointer = w;
+  });
+  cv.addEventListener("pointerleave", function () { if (S) S.hover = null; });
+  window.addEventListener("pointerup", function () { pointer = null; if (S) S.dragging = false; });
+  function dash() { var p = S.p; if (p.dashCd <= 0) { p.dash = 0.18; p.dashCd = 1.2; beep(220, 0.12, "sawtooth", 0.03); } }
+
+  var toastT = 0;
+  function toast(msg) { var t = $("toast"); t.textContent = msg; t.hidden = false; toastT = 2.2; }
+
+  // ---- scout phase ----
+  function startScout() {
+    S.phase = "scout"; S.map = LEC.make(S.wave); S.nests = S.map.nests; S.beacon = null; S.scoutT = SCOUT_T;
+    S.zs = []; S.camp = []; S.cans = []; S.bats = []; S.beams = []; S.pops = []; cellCache = null;
+    var a = aids();
+    $("sbTag").textContent = "Wave " + S.wave + " · Scout";
+    $("sbText").innerHTML = "Drop your beacon at the <b>safest spot in town</b>: the point farthest from every zombie nest. It's the centre of the largest empty circle.";
+    $("sbHint").textContent = a.circle ? "Hint: the safest spot is a Voronoi vertex, where three zones meet. Your beacon's circle shows the room you have before it touches a nest. Make it as big as you can."
+      : a.edges ? "The zone walls are drawn, but no circle this time. Which vertex is farthest from its nests?"
+      : "No help this time. Picture the perpendicular bisectors between nests. Where do three of them meet, far from everything?";
+    $("sbBtn").textContent = "LOCK IN"; $("sbBtn").disabled = true; $("sbBtn").onclick = lockBeacon;
+    $("sbCoord").textContent = "Tap the map to drop your beacon";
+    $("scoutBar").hidden = false; resize();
+    toast("Wave " + S.wave + ": scout the safest spot");
+    hud();
+  }
+  function scoutText() {
+    if (!S.beacon) return;
+    var t = "Beacon: (" + f1(S.beacon[0]) + ", " + f1(S.beacon[1]) + ")";
+    if (aids().circle) t += " · room: " + f1(nearestDist(S.beacon[0], S.beacon[1]));
+    $("sbCoord").textContent = t;
+  }
+  function lockBeacon() {
+    if (S.phase !== "scout") return;
+    if (!S.beacon) S.beacon = [W / 2, H / 2];
+    S.phase = "reveal";
+    var best = S.map.best, e = Math.hypot(S.beacon[0] - best.c[0], S.beacon[1] - best.c[1]);
+    S.err = e; S.tier = TIERS.find(function (t) { return e < t.max; });
+    var timeBonus = S.tier.pts ? Math.round(S.scoutT) * 5 * S.wave : 0;
+    S.score += S.tier.pts * S.wave + timeBonus;
+    if (S.tier.mult === 3) S.bulls++;
+    var mine = nearestDist(S.beacon[0], S.beacon[1]);
+    var tri = best.tri.map(function (i) { return LET[i]; });
+    $("sbTag").textContent = "Wave " + S.wave + " · Scout report";
+    $("sbText").innerHTML = '<span class="sb-verdict ' + (S.tier.mult >= 2 ? "good" : S.tier.mult > 1 ? "" : "bad") + '">' + S.tier.name + " · turrets ×" + S.tier.mult + "</span> " +
+      "You were " + f2(e) + " units from the true centre" + (S.tier.pts ? " (+" + (S.tier.pts * S.wave + timeBonus) + ")" : "") + ".";
+    $("sbHint").innerHTML = "The safest spot is <b>(" + f1(best.c[0]) + ", " + f1(best.c[1]) + ")</b>, where the zones of nests " + tri.join(", ") +
+      " meet. It's exactly " + f2(best.r) + " from each of those three nests, and every other nest is farther away. Your beacon had " + f2(mine) + " units of room.";
+    $("sbCoord").textContent = "Camp goes up at your beacon";
+    $("sbBtn").textContent = "DEFEND THE CAMP"; $("sbBtn").disabled = false; $("sbBtn").onclick = startDefend;
+    $("zoneTag").textContent = "×" + S.tier.mult;
+    cellCache = null;
+    if (S.tier.mult >= 2) { beep(660, 0.1, "triangle", 0.04); setTimeout(function () { beep(990, 0.16, "triangle", 0.04); }, 110); }
+    else beep(200, 0.25, "sawtooth", 0.035);
+    $("sbBtn").focus();
+    hud();
+  }
+
+  // ---- defend phase ----
+  function startDefend() {
+    S.phase = "defend"; S.t = DEFEND_T; S.spawnT = 1.2; S.batT = 4; S.overdrive = 0;
+    var b = S.beacon, offs = [[0, 1.35], [-1.25, -0.7], [1.25, -0.7]];
+    S.camp = offs.map(function (o) { return { x: Math.max(0.4, Math.min(W - 0.4, b[0] + o[0])), y: Math.max(0.4, Math.min(H - 0.4, b[1] + o[1])), cd: 0.5 }; });
+    S.p.x = b[0]; S.p.y = b[1]; S.p.inv = 1;
+    for (var i = 0; i < S.bonusZ; i++) spawnZombie(); S.bonusZ = 0;
+    $("sbTag").textContent = "Wave " + S.wave + " · Defend";
+    $("sbText").innerHTML = "Hold out for " + DEFEND_T + " seconds. Turrets fire at <b>×" + S.tier.mult + "</b> power. Zombies that reach the camp cost you health.";
+    $("sbHint").textContent = "WASD / arrows or hold the mouse to move. Space to dash. Cans = points. Batteries overcharge every turret for a few seconds.";
+    $("sbCoord").textContent = ""; $("sbBtn").hidden = true;
+    cellCache = null;
+    pointer = null; last = performance.now();
+    hud();
+  }
+  function spawnZombie() {
+    var n = S.nests[S.nestI++ % S.nests.length], ang = Math.random() * 6.28;
+    var big = S.wave >= 3 && Math.random() < 0.18, runner = !big && S.wave >= 2 && Math.random() < 0.25;
+    S.zs.push({ x: n[0] + Math.cos(ang) * 0.3, y: n[1] + Math.sin(ang) * 0.3, sp: (0.85 + 0.08 * S.wave) * (big ? 0.7 : runner ? 1.5 : 1) * (0.85 + Math.random() * 0.3), hp: big ? 3 : 1, big: big, runner: runner, ph: Math.random() * 6.28, look: Math.floor(Math.random() * 20), face: 1 });
+  }
+  function spawnCan() {
+    for (var k = 0; k < 50; k++) { var c = { x: 0.6 + Math.random() * (W - 1.2), y: 0.6 + Math.random() * (H - 1.2), ph: Math.random() * 6.28 }; if (Math.hypot(c.x - S.p.x, c.y - S.p.y) > 2.5) { S.cans.push(c); return; } }
+  }
+  function spawnBat() { S.bats.push({ x: 0.8 + Math.random() * (W - 1.6), y: 0.8 + Math.random() * (H - 1.6), life: 9 }); }
+
+  var last = 0;
+  function frame(ts) {
+    var dt = Math.min(0.05, (ts - last) / 1000 || 0); last = ts;
+    if (S && S.phase === "scout") { S.scoutT -= dt; if (S.scoutT <= 0) lockBeacon(); else hudTime(); }
+    if (S && S.phase === "defend") update(dt);
+    if (toastT > 0) { toastT -= dt; if (toastT <= 0) $("toast").hidden = true; }
+    draw(ts / 1000);
+    requestAnimationFrame(frame);
+  }
+  function update(dt) {
+    var p = S.p;
+    S.t -= dt; S.overdrive = Math.max(0, S.overdrive - dt);
+    var mx = 0, my = 0;
+    if (keys["arrowleft"] || keys["a"]) mx -= 1; if (keys["arrowright"] || keys["d"]) mx += 1;
+    if (keys["arrowup"] || keys["w"]) my += 1; if (keys["arrowdown"] || keys["s"]) my -= 1;
+    if (pointer) { var dx = pointer.x - p.x, dy = pointer.y - p.y, L = Math.hypot(dx, dy); if (L > 0.15) { mx = dx / L; my = dy / L; } }
+    var L2 = Math.hypot(mx, my); if (L2 > 0) { mx /= L2; my /= L2; if (mx) p.face = mx > 0 ? 1 : -1; }
+    var sp = p.dash > 0 ? 10 : 3.4;
+    p.x = Math.max(0.25, Math.min(W - 0.25, p.x + mx * sp * dt)); p.y = Math.max(0.25, Math.min(H - 0.25, p.y + my * sp * dt));
+    p.dash -= dt; p.dashCd -= dt; p.inv -= dt;
+    p.moving = L2 > 0; if (p.moving) p.walk = (p.walk || 0) + dt * (p.dash > 0 ? 22 : 11);
+
+    S.spawnT -= dt;
+    if (S.spawnT <= 0) { if (S.zs.length < 40) { spawnZombie(); if (S.wave >= 4 && Math.random() < 0.3) spawnZombie(); } S.spawnT = Math.max(0.32, 1.25 - 0.1 * S.wave) * (0.7 + Math.random() * 0.6); }
+    while (S.cans.length < 3) spawnCan();
+    S.batT -= dt; if (S.batT <= 0) { if (S.bats.length < 2) spawnBat(); S.batT = 7 + Math.random() * 3; }
+
+    // zombies head for the camp, but go after you if you get close
+    for (var i = S.zs.length - 1; i >= 0; i--) {
+      var z = S.zs[i]; z.ph += dt * 5;
+      var tx, ty, dP = Math.hypot(p.x - z.x, p.y - z.y);
+      if (dP < 3) { tx = p.x; ty = p.y; }
+      else { var bh = null, bd = 1e9; S.camp.forEach(function (h) { var d = Math.hypot(h.x - z.x, h.y - z.y); if (d < bd) { bd = d; bh = h; } }); tx = bh.x; ty = bh.y; }
+      var zx = tx - z.x, zy = ty - z.y, zl = Math.hypot(zx, zy) || 1, wob = Math.sin(z.ph) * 0.3;
+      z.x += (zx / zl + (-zy / zl) * wob) * z.sp * dt; z.y += (zy / zl + (zx / zl) * wob) * z.sp * dt;
+      if (Math.abs(zx) > 0.05) z.face = zx > 0 ? 1 : -1;
+      var hitR = z.big ? 0.7 : z.runner ? 0.5 : 0.58;
+      if (dP < hitR && p.inv <= 0) {
+        S.hearts -= 1; p.inv = 1.6; S.shake = 0.3; S.combo = 0; beep(110, 0.25, "square", 0.05);
+        z.x -= (p.x - z.x) / (dP || 1) * 1.5; z.y -= (p.y - z.y) / (dP || 1) * 1.5;
+        if (S.hearts <= 0) { hud(); return gameOver(); }
+        continue;
+      }
+      var hitCamp = S.camp.some(function (h) { return Math.hypot(h.x - z.x, h.y - z.y) < 0.65; });
+      if (hitCamp) {
+        S.zs.splice(i, 1); S.hearts -= 1; S.shake = 0.3; beep(90, 0.3, "square", 0.05);
+        S.pops.push({ x: z.x, y: z.y, t: 0.9, txt: "−1 health" });
+        if (S.hearts <= 0) { hud(); return gameOver(); }
+      }
+    }
+    // turrets: power comes from how well you scouted
+    var mult = S.tier.mult * (S.overdrive > 0 ? 1.6 : 1), range = 3 + 0.5 * (S.tier.mult - 1), dmg = S.tier.mult >= 3 ? 2 : 1;
+    S.camp.forEach(function (h) {
+      h.kick = Math.max(0, (h.kick || 0) - dt);
+      h.cd -= dt; if (h.cd > 0) return;
+      var target = -1, td = range;
+      for (var k = 0; k < S.zs.length; k++) { var d = Math.hypot(S.zs[k].x - h.x, S.zs[k].y - h.y); if (d < td) { td = d; target = k; } }
+      if (target < 0) { h.cd = 0.1; return; }
+      var tz = S.zs[target]; h.cd = 1.5 / mult; h.aim = Math.atan2(-(tz.y - h.y), tz.x - h.x); h.kick = 0.12;
+      S.beams.push({ x1: h.x, y1: h.y, x2: tz.x, y2: tz.y, t: 0.14 });
+      tz.hp -= dmg; beep(660, 0.05, "triangle", 0.02);
+      if (tz.hp <= 0) { S.pops.push({ x: tz.x, y: tz.y, t: 0.5, txt: "+5" }); S.zs.splice(target, 1); S.score += 5; }
+    });
+    S.comboT -= dt; if (S.comboT <= 0) S.combo = 0;
+    for (var c = S.cans.length - 1; c >= 0; c--) {
+      var can = S.cans[c];
+      if (Math.hypot(can.x - p.x, can.y - p.y) < 0.65) {
+        S.combo = Math.min(8, S.combo + 1); S.comboT = 3; var pts = 10 * S.combo; S.score += pts;
+        S.pops.push({ x: can.x, y: can.y, t: 0.7, txt: "+" + pts + (S.combo > 1 ? " x" + S.combo : "") });
+        S.cans.splice(c, 1); beep(520 + S.combo * 70, 0.08, "square", 0.03);
+      }
+    }
+    for (var b = S.bats.length - 1; b >= 0; b--) {
+      var bat = S.bats[b]; bat.life -= dt;
+      if (bat.life <= 0) { S.bats.splice(b, 1); continue; }
+      if (Math.hypot(bat.x - p.x, bat.y - p.y) < 0.7) { S.overdrive = 6; S.pops.push({ x: bat.x, y: bat.y, t: 0.9, txt: "OVERCHARGE" }); S.bats.splice(b, 1); beep(880, 0.1, "triangle", 0.035); }
+    }
+    for (var q = S.beams.length - 1; q >= 0; q--) { S.beams[q].t -= dt; if (S.beams[q].t <= 0) S.beams.splice(q, 1); }
+    for (var r = S.pops.length - 1; r >= 0; r--) { S.pops[r].t -= dt; if (S.pops[r].t <= 0) S.pops.splice(r, 1); }
+    S.shake = Math.max(0, S.shake - dt);
+    if (S.t <= 0) endWave();
+    hud();
+  }
+  function hudTime() {
+    var t = S.phase === "scout" ? S.scoutT : S.phase === "defend" ? S.t : 0;
+    $("hTimeLbl").textContent = S.phase === "scout" ? "Scout" : S.phase === "defend" ? "Defend" : "Time";
+    $("hTime").textContent = (S.phase === "scout" || S.phase === "defend") ? Math.max(0, Math.ceil(t)) : "—";
+  }
+  function hud() {
+    $("hWave").textContent = S.wave; $("hScore").textContent = S.score;
+    var h = ""; for (var i = 0; i < S.maxHearts; i++) h += i < S.hearts ? "♥" : "♡";
+    $("hearts").textContent = h;
+    $("zoneTag").textContent = S.phase === "scout" ? "?" : "×" + S.tier.mult + (S.overdrive > 0 ? " ⚡" : "");
+    hudTime();
+  }
+
+  // ---- drawing ----
+  function draw(time) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = C.paper; ctx.fillRect(0, 0, cv.width, cv.height);
+    if (!S || !S.nests.length) return;
+    var shx = 0, shy = 0;
+    if (S.shake > 0 && !reduceMotion) { shx = (Math.random() - 0.5) * 10 * dpr * S.shake; shy = (Math.random() - 0.5) * 10 * dpr * S.shake; }
+    ctx.translate(shx, shy);
+    var a = aids(), mode = S.phase === "scout" ? (a.fill ? "fe" : a.edges ? "e" : "") : "fe";
+    if (!cellCache || cellMode !== mode) { buildCells(mode.indexOf("f") >= 0, mode.indexOf("e") >= 0); cellMode = mode; }
+    ctx.globalAlpha = S.phase === "defend" ? 0.55 : 1; ctx.drawImage(cellCache, ox, oy); ctx.globalAlpha = 1;
+    // grid + axes
+    ctx.lineWidth = 1 * dpr;
+    for (var x = 0; x <= W; x++) { ctx.strokeStyle = x % 2 ? "rgba(160,180,200,0.10)" : "rgba(160,180,200,0.22)"; ctx.beginPath(); ctx.moveTo(sx(x), sy(0)); ctx.lineTo(sx(x), sy(H)); ctx.stroke(); }
+    for (var y = 0; y <= H; y++) { ctx.strokeStyle = y % 2 ? "rgba(160,180,200,0.10)" : "rgba(160,180,200,0.22)"; ctx.beginPath(); ctx.moveTo(sx(0), sy(y)); ctx.lineTo(sx(W), sy(y)); ctx.stroke(); }
+    ctx.strokeStyle = C.soft; ctx.lineWidth = 2 * dpr; ctx.strokeRect(sx(0), sy(H), W * scale, H * scale);
+    ctx.fillStyle = C.soft; ctx.font = (11 * dpr) + "px JetBrains Mono, monospace"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    for (var x2 = 0; x2 <= W; x2 += 2) ctx.fillText(x2, sx(x2), sy(0) + 5 * dpr);
+    ctx.textAlign = "right"; ctx.textBaseline = "middle";
+    for (var y2 = 0; y2 <= H; y2 += 2) ctx.fillText(y2, sx(0) - 6 * dpr, sy(y2));
+
+    // scouting overlays
+    var best = S.map.best;
+    if (S.phase === "scout") {
+      if (a.circle && S.hover && !S.dragging && S.hover.x >= 0 && S.hover.x <= W && S.hover.y >= 0 && S.hover.y <= H) emptyCircle(S.hover.x, S.hover.y, "rgba(233,226,208,0.35)", false);
+      if (S.beacon && a.circle) emptyCircle(S.beacon[0], S.beacon[1], C.hazard, true);
+    }
+    if (S.phase === "reveal" || S.phase === "defend") {
+      ctx.strokeStyle = C.hazard; ctx.lineWidth = 3 * dpr; ctx.setLineDash([10 * dpr, 7 * dpr]); ctx.globalAlpha = S.phase === "defend" ? 0.35 : 1;
+      ctx.beginPath(); ctx.arc(sx(best.c[0]), sy(best.c[1]), best.r * scale, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+      if (S.phase === "reveal") {
+        ctx.strokeStyle = C.hazard; ctx.lineWidth = 2 * dpr;
+        best.tri.forEach(function (i) { ctx.beginPath(); ctx.moveTo(sx(best.c[0]), sy(best.c[1])); ctx.lineTo(sx(S.nests[i][0]), sy(S.nests[i][1])); ctx.stroke(); });
+        ctx.fillStyle = C.hazard; ctx.font = "700 " + (13 * dpr) + "px JetBrains Mono, monospace"; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+        var n0 = S.nests[best.tri[0]]; ctx.fillText("r = " + f2(best.r), sx((best.c[0] + n0[0]) / 2) + 6 * dpr, sy((best.c[1] + n0[1]) / 2));
+        ctx.strokeStyle = C.ink; ctx.setLineDash([4 * dpr, 4 * dpr]); ctx.beginPath(); ctx.moveTo(sx(S.beacon[0]), sy(S.beacon[1])); ctx.lineTo(sx(best.c[0]), sy(best.c[1])); ctx.stroke(); ctx.setLineDash([]);
+      }
+      var cx = sx(best.c[0]), cy = sy(best.c[1]), k = 8 * dpr;
+      ctx.strokeStyle = C.hazard; ctx.lineWidth = 3 * dpr; ctx.beginPath(); ctx.moveTo(cx - k, cy - k); ctx.lineTo(cx + k, cy + k); ctx.moveTo(cx + k, cy - k); ctx.lineTo(cx - k, cy + k); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    // nests
+    S.nests.forEach(function (n, i) { drawNest(sx(n[0]), sy(n[1]), i, time, S.phase === "reveal" && best.tri.indexOf(i) >= 0); });
+    // beacon / camp
+    if (S.phase === "scout" || S.phase === "reveal") { if (S.beacon) drawBeacon(sx(S.beacon[0]), sy(S.beacon[1]), time); }
+    if (S.phase === "defend") {
+      S.beams.forEach(function (b) { ctx.strokeStyle = S.overdrive > 0 ? C.ink : C.hazard; ctx.lineWidth = (S.tier.mult >= 3 ? 5 : 3.5) * dpr; ctx.globalAlpha = Math.min(1, b.t / 0.14); ctx.beginPath(); ctx.moveTo(sx(b.x1), sy(b.y1)); ctx.lineTo(sx(b.x2), sy(b.y2)); ctx.stroke(); ctx.globalAlpha = 1; });
+      var range = 3 + 0.5 * (S.tier.mult - 1);
+      ctx.strokeStyle = "rgba(232,176,74,0.22)"; ctx.lineWidth = 2 * dpr; ctx.setLineDash([5 * dpr, 7 * dpr]);
+      S.camp.forEach(function (h) { ctx.beginPath(); ctx.arc(sx(h.x), sy(h.y), range * scale, 0, 7); ctx.stroke(); }); ctx.setLineDash([]);
+      S.camp.forEach(function (h, i) { drawHouse(sx(h.x), sy(h.y), i, h); });
+      S.cans.forEach(function (c) { drawCan(sx(c.x), sy(c.y) + Math.sin(time * 3 + c.ph) * 2 * dpr); });
+      S.bats.forEach(function (b) { if (b.life > 2.5 || Math.floor(b.life * 2) % 2 === 0) drawBattery(sx(b.x), sy(b.y)); });
+      S.zs.forEach(function (z) { drawZombie(sx(z.x), sy(z.y), z); });
+      drawPlayer(sx(S.p.x), sy(S.p.y), S.p);
+      if (S.p.dashCd > 0) { ctx.strokeStyle = C.soft; ctx.lineWidth = 2 * dpr; ctx.beginPath(); ctx.arc(sx(S.p.x), sy(S.p.y), 0.55 * scale, -Math.PI / 2, -Math.PI / 2 + 2 * Math.PI * (1 - S.p.dashCd / 1.2)); ctx.stroke(); }
+    }
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.font = "700 " + (14 * dpr) + "px JetBrains Mono, monospace";
+    S.pops.forEach(function (p) { ctx.fillStyle = C.ink; ctx.globalAlpha = Math.min(1, p.t * 2); ctx.fillText(p.txt, sx(p.x), sy(p.y) - (1 - p.t) * 24 * dpr - 14 * dpr); ctx.globalAlpha = 1; });
+  }
+  function emptyCircle(x, y, col, solid) {
+    var i = nearestNest(x, y), r = Math.hypot(x - S.nests[i][0], y - S.nests[i][1]);
+    ctx.strokeStyle = col; ctx.lineWidth = (solid ? 3 : 2) * dpr; if (!solid) ctx.setLineDash([6 * dpr, 6 * dpr]);
+    ctx.beginPath(); ctx.arc(sx(x), sy(y), r * scale, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+    if (solid) { ctx.fillStyle = "rgba(232,176,74,0.08)"; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.5 * dpr; ctx.beginPath(); ctx.moveTo(sx(x), sy(y)); ctx.lineTo(sx(S.nests[i][0]), sy(S.nests[i][1])); ctx.stroke(); }
+  }
+  // ---- characters ----
+  var SKIN = ["#7fa27a", "#8fae86", "#94a37a", "#7c9a8c"], SHIRT = ["#56657f", "#7a5a48", "#6b4f6e", "#4d6a5a", "#8a6a3a"];
+  function hash(i, k) { var s = Math.sin(i * 127.1 + k * 311.7) * 43758.5453; return s - Math.floor(s); }
+  function limb(x1, y1, x2, y2, w, col) {
+    ctx.lineCap = "round";
+    ctx.strokeStyle = C.line; ctx.lineWidth = w + 3 * dpr; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  }
+  function shadow(u) { ctx.fillStyle = "rgba(0,0,0,0.32)"; ctx.beginPath(); ctx.ellipse(0, u * 1.0, u * 0.62, u * 0.16, 0, 0, 7); ctx.fill(); }
+
+  function drawNest(x, y, i, t, hl) {
+    var u = scale * 0.46, pulse = reduceMotion ? 0 : Math.sin(t * 2 + i) * u * 0.04;
+    ctx.save(); ctx.translate(x, y);
+    // cracks radiating into the ground
+    ctx.strokeStyle = "rgba(11,16,22,0.85)"; ctx.lineWidth = 2 * dpr; ctx.lineCap = "round";
+    for (var k = 0; k < 5; k++) {
+      var a = hash(i, k) * 6.28, l1 = u * (1.25 + hash(i, k + 9) * 0.5);
+      ctx.beginPath(); ctx.moveTo(Math.cos(a) * u * 0.9, Math.sin(a) * u * 0.9);
+      ctx.lineTo(Math.cos(a + 0.18) * l1 * 0.8, Math.sin(a + 0.18) * l1 * 0.8); ctx.lineTo(Math.cos(a - 0.1) * l1, Math.sin(a - 0.1) * l1); ctx.stroke();
+    }
+    // jagged rim
+    ctx.fillStyle = "#3a2018"; ctx.strokeStyle = hl ? C.hazard : C.marker; ctx.lineWidth = (hl ? 4 : 3) * dpr;
+    ctx.beginPath();
+    for (var j = 0; j < 14; j++) { var aa = j / 14 * 6.28, rr = u * (0.95 + hash(i, j + 20) * 0.22) + pulse; if (j === 0) ctx.moveTo(Math.cos(aa) * rr, Math.sin(aa) * rr); else ctx.lineTo(Math.cos(aa) * rr, Math.sin(aa) * rr); }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    // pit and ooze
+    ctx.fillStyle = "#140a08"; ctx.beginPath(); ctx.ellipse(0, u * 0.05, u * 0.7, u * 0.6, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = "#4f6e3e"; ctx.beginPath(); ctx.ellipse(0, u * 0.12, u * 0.52, u * 0.4, 0, 0, 7); ctx.fill();
+    ctx.fillStyle = "#6f9a56"; ctx.beginPath(); ctx.ellipse(-u * 0.1, u * 0.05, u * 0.3, u * 0.2, 0, 0, 7); ctx.fill();
+    // bubbles grow and pop on a loop
+    for (var b = 0; b < 3; b++) {
+      var ph = ((t * 0.7 + hash(i, b + 40)) % 1), br = u * 0.16 * ph;
+      if (reduceMotion) { ph = 0.5; br = u * 0.08; }
+      ctx.globalAlpha = 1 - ph * 0.6; ctx.strokeStyle = "#9fc48a"; ctx.lineWidth = 1.5 * dpr; ctx.fillStyle = "rgba(127,162,122,0.6)";
+      ctx.beginPath(); ctx.arc((hash(i, b + 50) - 0.5) * u * 0.7, (hash(i, b + 60) - 0.5) * u * 0.45 + u * 0.1, br, 0, 7); ctx.fill(); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    // a bone sticking out of the rim
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 3 * dpr; ctx.beginPath(); ctx.moveTo(u * 0.55, -u * 0.55); ctx.lineTo(u * 0.95, -u * 0.95); ctx.stroke();
+    ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(u * 0.98, -u * 0.9, 2.4 * dpr, 0, 7); ctx.arc(u * 0.9, -u * 1.0, 2.4 * dpr, 0, 7); ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = C.ink; ctx.font = "400 " + Math.round(u * 0.9) + "px Black Ops One, Impact, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(LET[i], x, S.nests[i][1] >= H - 0.5 ? y + u * 1.75 : y - u * 1.65);
+  }
+  function drawBeacon(x, y, t) {
+    var u = scale * 0.25, glow = reduceMotion ? 0.25 : 0.2 + Math.sin(t * 3) * 0.08;
+    ctx.fillStyle = "rgba(232,176,74," + glow + ")"; ctx.beginPath(); ctx.arc(x, y - u * 1.9, u * 1.1, 0, 7); ctx.fill();
+    ctx.strokeStyle = C.line; ctx.lineWidth = 2.5 * dpr;
+    ctx.fillStyle = "#6f7a86"; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - u * 0.55, y - u * 1.5); ctx.lineTo(x + u * 0.55, y - u * 1.5); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = C.hazard; ctx.beginPath(); ctx.arc(x, y - u * 1.9, u * 0.5, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = C.line; ctx.lineWidth = 1.5 * dpr; ctx.beginPath(); ctx.moveTo(x - u * 0.5, y - u * 1.9); ctx.lineTo(x + u * 0.5, y - u * 1.9); ctx.stroke();
+    ctx.fillStyle = C.line; ctx.beginPath(); ctx.arc(x, y, 3 * dpr, 0, 7); ctx.fill();
+  }
+  function drawHouse(x, y, i, h) {
+    var u = scale * 0.6, od = S.overdrive > 0;
+    ctx.save(); ctx.translate(x, y);
+    ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(0, u * 0.85, u * 1.15, u * 0.2, 0, 0, 7); ctx.fill();
+    // plank walls
+    ctx.fillStyle = ["#7a5a3a", "#6e5640", "#80603e"][i % 3]; ctx.strokeStyle = C.line; ctx.lineWidth = 2.5 * dpr;
+    ctx.fillRect(-u, -u * 0.1, u * 2, u * 0.9); ctx.strokeRect(-u, -u * 0.1, u * 2, u * 0.9);
+    ctx.strokeStyle = "rgba(11,16,22,0.45)"; ctx.lineWidth = 1.2 * dpr;
+    for (var k = 1; k < 4; k++) { ctx.beginPath(); ctx.moveTo(-u, -u * 0.1 + k * u * 0.22); ctx.lineTo(u, -u * 0.1 + k * u * 0.22); ctx.stroke(); }
+    // roof with shingles
+    ctx.fillStyle = "#8a3b2e"; ctx.strokeStyle = od ? C.hazard : C.line; ctx.lineWidth = 2.5 * dpr;
+    ctx.beginPath(); ctx.moveTo(-u * 1.15, -u * 0.05); ctx.lineTo(0, -u * 0.85); ctx.lineTo(u * 1.15, -u * 0.05); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = "rgba(11,16,22,0.4)"; ctx.lineWidth = 1.2 * dpr;
+    for (var r = 1; r < 3; r++) { var yy = -u * 0.85 + r * u * 0.27, ww = u * 1.15 * r / 3; ctx.beginPath(); ctx.moveTo(-ww, yy); ctx.lineTo(ww, yy); ctx.stroke(); }
+    // lit window and door
+    ctx.fillStyle = od ? "#ffd77a" : C.hazard; ctx.strokeStyle = C.line; ctx.lineWidth = 2 * dpr;
+    ctx.fillRect(-u * 0.75, u * 0.08, u * 0.42, u * 0.34); ctx.strokeRect(-u * 0.75, u * 0.08, u * 0.42, u * 0.34);
+    ctx.beginPath(); ctx.moveTo(-u * 0.54, u * 0.08); ctx.lineTo(-u * 0.54, u * 0.42); ctx.moveTo(-u * 0.75, u * 0.25); ctx.lineTo(-u * 0.33, u * 0.25); ctx.stroke();
+    ctx.fillStyle = "#3a2a1c"; ctx.fillRect(u * 0.2, u * 0.18, u * 0.38, u * 0.62); ctx.strokeRect(u * 0.2, u * 0.18, u * 0.38, u * 0.62);
+    ctx.fillStyle = C.hazard; ctx.beginPath(); ctx.arc(u * 0.5, u * 0.5, 1.8 * dpr, 0, 7); ctx.fill();
+    // rooftop turret that tracks its last target
+    var aim = h && h.aim !== undefined ? h.aim : -Math.PI / 2, kick = h && h.kick > 0 ? h.kick / 0.12 : 0;
+    ctx.translate(0, -u * 0.85);
+    ctx.save(); ctx.rotate(aim);
+    var bl = u * (0.85 - 0.25 * kick);
+    ctx.fillStyle = "#4a535e"; ctx.strokeStyle = C.line; ctx.lineWidth = 2 * dpr;
+    ctx.fillRect(0, -u * 0.09, bl, u * 0.18); ctx.strokeRect(0, -u * 0.09, bl, u * 0.18);
+    if (kick > 0.4) { ctx.fillStyle = C.hazard; ctx.beginPath(); ctx.arc(bl + u * 0.12, 0, u * 0.14 * kick, 0, 7); ctx.fill(); }
+    ctx.restore();
+    ctx.fillStyle = "#6f7a86"; ctx.beginPath(); ctx.arc(0, 0, u * 0.26, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = C.line; ctx.beginPath(); ctx.arc(0, 0, u * 0.08, 0, 7); ctx.fill();
+    ctx.restore();
+    for (var p = 0; p < S.tier.mult; p++) { ctx.fillStyle = C.hazard; ctx.strokeStyle = C.line; ctx.lineWidth = 1.5 * dpr; ctx.fillRect(x - u + p * u * 0.36, y - u * 1.55, u * 0.28, u * 0.2); ctx.strokeRect(x - u + p * u * 0.36, y - u * 1.55, u * 0.28, u * 0.2); }
+  }
+  function drawCan(x, y) {
+    var u = scale * 0.26;
+    ctx.fillStyle = "#aab4bd"; ctx.strokeStyle = C.line; ctx.lineWidth = 2 * dpr;
+    ctx.fillRect(x - u, y - u * 1.2, u * 2, u * 2.4); ctx.strokeRect(x - u, y - u * 1.2, u * 2, u * 2.4);
+    ctx.fillStyle = "#c9d1d8"; ctx.beginPath(); ctx.ellipse(x, y - u * 1.2, u, u * 0.3, 0, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = C.marker; ctx.fillRect(x - u, y - u * 0.45, u * 2, u * 0.95);
+    ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(x, y + u * 0.02, u * 0.28, 0, 7); ctx.fill();
+    ctx.strokeStyle = "rgba(11,16,22,0.5)"; ctx.lineWidth = 1 * dpr; ctx.beginPath(); ctx.moveTo(x - u, y + u * 0.85); ctx.lineTo(x + u, y + u * 0.85); ctx.stroke();
+  }
+  function drawBattery(x, y) {
+    var u = scale * 0.27;
+    ctx.fillStyle = C.hazard; ctx.strokeStyle = C.line; ctx.lineWidth = 2 * dpr;
+    ctx.fillRect(x - u * 1.4, y - u * 0.8, u * 2.8, u * 1.6); ctx.strokeRect(x - u * 1.4, y - u * 0.8, u * 2.8, u * 1.6);
+    ctx.fillStyle = C.line; ctx.fillRect(x + u * 1.4, y - u * 0.35, u * 0.4, u * 0.7);
+    ctx.beginPath(); ctx.moveTo(x - u * 0.2, y - u * 0.6); ctx.lineTo(x - u * 0.6, y + u * 0.1); ctx.lineTo(x, y + u * 0.1); ctx.lineTo(x - u * 0.2, y + u * 0.6); ctx.lineTo(x + u * 0.6, y - u * 0.15); ctx.lineTo(x, y - u * 0.15); ctx.closePath(); ctx.fill();
+  }
+  function drawZombie(x, y, z) {
+    var big = z.big, run = z.runner, u = scale * (big ? 0.7 : run ? 0.48 : 0.55);
+    var step = Math.sin(z.ph * (run ? 2.2 : 1.5)), bob = Math.abs(step) * u * 0.07, face = z.face || 1;
+    var skin = SKIN[z.look % SKIN.length], shirt = SHIRT[(z.look >> 2) % SHIRT.length];
+    ctx.save(); ctx.translate(x, y); ctx.scale(face, 1);
+    shadow(u);
+    if (run) ctx.rotate(0.22); else if (big) ctx.rotate(0.1);
+    // legs, shambling
+    limb(-u * 0.12, u * 0.25, -u * 0.12 - step * u * 0.22, u * 0.95, u * 0.2, "#33332f");
+    limb(u * 0.12, u * 0.25, u * 0.12 + step * u * 0.22, u * 0.95, u * 0.2, "#45443e");
+    // back arm reaching forward
+    limb(u * 0.05, -u * 0.38 - bob, u * 0.95, -u * 0.36 + bob, u * 0.17, skin);
+    // torso with a torn hem
+    ctx.fillStyle = shirt; ctx.strokeStyle = C.line; ctx.lineWidth = 2.5 * dpr; ctx.lineJoin = "round";
+    var w = big ? 0.52 : 0.38;
+    ctx.beginPath(); ctx.moveTo(-u * w, -u * 0.52 - bob); ctx.lineTo(u * w, -u * 0.52 - bob); ctx.lineTo(u * (w + 0.04), u * 0.28);
+    ctx.lineTo(u * 0.2, u * 0.18); ctx.lineTo(u * 0.05, u * 0.34); ctx.lineTo(-u * 0.12, u * 0.2); ctx.lineTo(-u * (w + 0.02), u * 0.32); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "rgba(11,16,22,0.55)"; ctx.beginPath(); ctx.moveTo(-u * 0.12, -u * 0.18); ctx.lineTo(u * 0.02, -u * 0.1); ctx.lineTo(-u * 0.08, u * 0.02); ctx.closePath(); ctx.fill();
+    // front arm
+    limb(u * 0.15, -u * 0.28 - bob, u * 1.02, -u * 0.16 - bob, u * 0.17, skin);
+    ctx.fillStyle = skin; ctx.strokeStyle = C.line; ctx.lineWidth = 1.5 * dpr;
+    for (var fz = 0; fz < 3; fz++) { ctx.beginPath(); ctx.arc(u * 1.12, -u * 0.22 - bob + fz * u * 0.06, u * 0.05, 0, 7); ctx.fill(); ctx.stroke(); }
+    // head
+    var hx = big ? u * 0.22 : u * 0.1, hy = (big ? -u * 0.7 : -u * 0.82) - bob, hr = u * (big ? 0.32 : 0.36);
+    ctx.fillStyle = skin; ctx.strokeStyle = C.line; ctx.lineWidth = 2.5 * dpr; ctx.beginPath(); ctx.arc(hx, hy, hr, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = C.line; ctx.beginPath(); ctx.arc(hx + hr * 0.38, hy - hr * 0.1, hr * 0.3, 0, 7); ctx.arc(hx - hr * 0.12, hy - hr * 0.16, hr * 0.22, 0, 7); ctx.fill();
+    ctx.fillStyle = C.hazard; ctx.beginPath(); ctx.arc(hx + hr * 0.42, hy - hr * 0.08, hr * 0.14, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(hx - hr * 0.1, hy - hr * 0.14, hr * 0.1, 0, 7); ctx.fill();
+    ctx.fillStyle = C.line; ctx.beginPath(); ctx.moveTo(hx - hr * 0.05, hy + hr * 0.38); ctx.lineTo(hx + hr * 0.75, hy + hr * 0.3); ctx.lineTo(hx + hr * 0.62, hy + hr * 0.6); ctx.lineTo(hx + hr * 0.05, hy + hr * 0.62); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = C.ink; ctx.fillRect(hx + hr * 0.14, hy + hr * 0.36, hr * 0.17, hr * 0.2); ctx.fillRect(hx + hr * 0.42, hy + hr * 0.32, hr * 0.17, hr * 0.2);
+    if (big) {
+      ctx.fillStyle = "#d8d0bd"; ctx.strokeStyle = C.line; ctx.lineWidth = 1.5 * dpr;
+      ctx.beginPath(); ctx.moveTo(hx - hr, hy - hr * 0.55); ctx.lineTo(hx + hr * 0.9, hy - hr * 0.8); ctx.lineTo(hx + hr * 0.95, hy - hr * 0.5); ctx.lineTo(hx - hr * 0.95, hy - hr * 0.25); ctx.closePath(); ctx.fill(); ctx.stroke();
+    } else {
+      ctx.strokeStyle = C.line; ctx.lineWidth = 1.5 * dpr; ctx.beginPath(); ctx.moveTo(hx - hr * 0.7, hy - hr * 0.55); ctx.lineTo(hx + hr * 0.1, hy - hr * 0.85); ctx.stroke();
+      for (var s = 0; s < 3; s++) { var sxp = hx - hr * 0.55 + s * hr * 0.28, syp = hy - hr * 0.6 - s * hr * 0.1; ctx.beginPath(); ctx.moveTo(sxp - hr * 0.06, syp - hr * 0.1); ctx.lineTo(sxp + hr * 0.06, syp + hr * 0.1); ctx.stroke(); }
+      ctx.strokeStyle = "#2a2a26"; ctx.lineWidth = 2 * dpr;
+      for (var hh = 0; hh < 3; hh++) { ctx.beginPath(); ctx.moveTo(hx - hr * (0.75 - hh * 0.15), hy - hr * (0.65 + hh * 0.08)); ctx.lineTo(hx - hr * (1.0 - hh * 0.15), hy - hr * (1.0 + hh * 0.05)); ctx.stroke(); }
+    }
+    ctx.restore();
+    if (big) { ctx.fillStyle = C.line; ctx.fillRect(x - u * 0.6, y - u * 1.45, u * 1.2, 4 * dpr); ctx.fillStyle = C.hazard; ctx.fillRect(x - u * 0.6, y - u * 1.45, u * 1.2 * z.hp / 3, 4 * dpr); }
+  }
+  function drawPlayer(x, y, p) {
+    var u = scale * 0.55, face = p.face || 1, step = p.moving ? Math.sin(p.walk) : 0, bob = Math.abs(step) * u * 0.06;
+    ctx.save(); ctx.translate(x, y); ctx.scale(face, 1);
+    // flashlight beam (soft, steady)
+    var g = ctx.createLinearGradient(u * 0.3, 0, u * 3.4, 0); g.addColorStop(0, "rgba(232,176,74,0.22)"); g.addColorStop(1, "rgba(232,176,74,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(u * 0.32, -u * 0.95 - bob); ctx.lineTo(u * 3.4, -u * 1.9); ctx.lineTo(u * 3.4, u * 0.2); ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = p.inv > 0 ? 0.5 : 1;
+    shadow(u);
+    // legs and boots
+    limb(-u * 0.1, u * 0.28, -u * 0.1 - step * u * 0.25, u * 0.9, u * 0.21, "#4f5a45");
+    limb(u * 0.12, u * 0.28, u * 0.12 + step * u * 0.25, u * 0.9, u * 0.21, "#5c684f");
+    ctx.fillStyle = "#2a2420"; ctx.fillRect(-u * 0.1 - step * u * 0.25 - u * 0.12, u * 0.88, u * 0.3, u * 0.12); ctx.fillRect(u * 0.12 + step * u * 0.25 - u * 0.12, u * 0.88, u * 0.3, u * 0.12);
+    // backpack
+    ctx.fillStyle = "#6b4a2e"; ctx.strokeStyle = C.line; ctx.lineWidth = 2.5 * dpr;
+    rrect(-u * 0.7, -u * 0.6 - bob, u * 0.38, u * 0.72, u * 0.08); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#87613d"; ctx.fillRect(-u * 0.66, -u * 0.25 - bob, u * 0.3, u * 0.14);
+    // vest with reflective stripes
+    ctx.fillStyle = C.hazard; rrect(-u * 0.38, -u * 0.58 - bob, u * 0.76, u * 0.9, u * 0.12); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = C.ink; ctx.fillRect(-u * 0.38, -u * 0.25 - bob, u * 0.76, u * 0.08); ctx.fillRect(-u * 0.38, u * 0.0 - bob, u * 0.76, u * 0.08);
+    ctx.strokeStyle = "#6b4a2e"; ctx.lineWidth = 3 * dpr; ctx.beginPath(); ctx.moveTo(-u * 0.32, -u * 0.55 - bob); ctx.lineTo(-u * 0.05, u * 0.25 - bob); ctx.stroke();
+    // arm with crowbar
+    limb(u * 0.1, -u * 0.35 - bob, u * 0.55, -u * 0.05 - bob, u * 0.17, "#d9b896");
+    ctx.strokeStyle = "#3d454e"; ctx.lineWidth = 4 * dpr; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(u * 0.4, u * 0.25 - bob); ctx.lineTo(u * 0.75, -u * 0.55 - bob); ctx.quadraticCurveTo(u * 0.82, -u * 0.72 - bob, u * 0.66, -u * 0.74 - bob); ctx.stroke();
+    // head + helmet + headlamp
+    var hy = -u * 0.9 - bob;
+    ctx.fillStyle = "#d9b896"; ctx.strokeStyle = C.line; ctx.lineWidth = 2.5 * dpr; ctx.beginPath(); ctx.arc(u * 0.04, hy, u * 0.3, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = C.marker; ctx.beginPath(); ctx.arc(u * 0.02, hy - u * 0.06, u * 0.34, Math.PI * 1.05, Math.PI * 1.95); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillRect(-u * 0.32, hy - u * 0.1, u * 0.72, u * 0.07); ctx.strokeRect(-u * 0.32, hy - u * 0.1, u * 0.72, u * 0.07);
+    ctx.fillStyle = "#ffd77a"; ctx.beginPath(); ctx.arc(u * 0.3, hy - u * 0.2, u * 0.08, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = C.line; ctx.beginPath(); ctx.arc(u * 0.16, hy + u * 0.02, u * 0.045, 0, 7); ctx.fill();
+    ctx.strokeStyle = C.line; ctx.lineWidth = 1.5 * dpr; ctx.beginPath(); ctx.moveTo(u * 0.08, hy + u * 0.16); ctx.lineTo(u * 0.24, hy + u * 0.14); ctx.stroke();
+    ctx.restore(); ctx.globalAlpha = 1;
+  }
+  function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+
+  // ---- radio questions (between waves) ----
+  var TAUNT_START = ["Radio's mine now. Answer my little question or I send friends.", "You survived? Cute. Let's see how you do with geometry.", "My zombies don't do math. Do you?", "Zones, borders, bisectors... I'll bet you can't find the wall."];
+  var TAUNT_WIN = ["Hmph. Lucky guess.", "Fine. Patch yourself up.", "Ugh, a mathematician."];
+  var TAUNT_LOSE = ["Wrong! Extra zombies coming your way.", "Ha! I'm sending friends.", "Close. Close doesn't stop zombies."];
+  function villainHTML(msg) {
+    return '<svg width="48" height="48" viewBox="0 0 64 64" aria-hidden="true"><path d="M6 64 L10 44 Q32 36 54 44 L58 64 Z" fill="#e9e2d0" stroke="#0b1016" stroke-width="3"/><path d="M26 42 L32 54 L38 42" fill="#c8bfa8" stroke="#0b1016" stroke-width="2.5"/><path d="M30 46 L32 58 L34 46 Z" fill="#d9653b" stroke="#0b1016" stroke-width="1.5"/><rect x="44" y="48" width="7" height="3" fill="#0b1016"/><rect x="45" y="44" width="2" height="5" fill="#4a535e"/><path d="M12 18 Q10 6 20 8 Q22 2 30 6 Q36 0 42 6 Q52 4 52 16" fill="#9aa6b2" stroke="#0b1016" stroke-width="2.5"/><circle cx="32" cy="27" r="16" fill="#7fa27a" stroke="#0b1016" stroke-width="3"/><path d="M15 23 L49 23" stroke="#0b1016" stroke-width="3"/><circle cx="25" cy="24" r="6" fill="#e8b04a" stroke="#0b1016" stroke-width="3"/><circle cx="39" cy="24" r="6" fill="#e8b04a" stroke="#0b1016" stroke-width="3"/><circle cx="26" cy="24" r="2" fill="#0b1016"/><circle cx="38" cy="24" r="2" fill="#0b1016"/><path d="M23 35 Q32 41 41 34" fill="#0b1016" stroke="#0b1016" stroke-width="2.5" stroke-linecap="round"/><path d="M27 36 v2 M31 37 v2 M35 36 v2" stroke="#e9e2d0" stroke-width="1.6"/><path d="M42 30 L47 33 M43 33 L45 30 M45 34 L47 31" stroke="#0b1016" stroke-width="1.4"/></svg><p><b>Dr. Decay:</b> ' + msg + "</p>";
+  }
+  function pickOne(a) { return a[Math.floor(Math.random() * a.length)]; }
+  var Q = null, qPicked = null, qDone = false;
+  function endWave() {
+    S.phase = "question"; S.zs = []; S.beams = []; S.bats = [];
+    S.score += 25 * S.wave; beep(330, 0.2, "triangle", 0.04);
+    $("scoutBar").hidden = true;
+    openQuestion();
+  }
+  function openQuestion() {
+    Q = DZ.forWave(S.wave); qPicked = null; qDone = false;
+    $("qTaunt").innerHTML = villainHTML(pickOne(TAUNT_START));
+    $("qTag").textContent = "Wave " + S.wave + " radio check · " + Q.tag;
+    $("qText").innerHTML = Q.text; $("qResult").hidden = true; $("qPick").textContent = "";
+    var opts = $("qOpts"); opts.innerHTML = "";
+    $("qLockRow").hidden = Q.kind !== "grid"; $("qLock").disabled = true;
+    if (Q.kind === "mc" || Q.kind === "site") Q.options.forEach(function (o, i) { var b = document.createElement("button"); b.type = "button"; b.className = "opt"; b.textContent = Q.kind === "site" ? "Safe house " + o : o; b.onclick = function () { answer(i); }; opts.appendChild(b); });
+    mini.classList.toggle("clickable", Q.kind === "site" || Q.kind === "grid");
+    $("qNext").textContent = "SCOUT WAVE " + (S.wave + 1);
+    $("qScreen").hidden = false; drawMini(false); hud();
+  }
+  function miniXY(e) { var r = mini.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * mini.width, py = (e.clientY - r.top) / r.height * mini.height, pad = 40, sc = (mini.width - 2 * pad) / 10; return { x: (px - pad) / sc, y: 10 - (py - pad) / sc }; }
+  mini.addEventListener("pointerdown", function (e) {
+    if (!Q || qDone) return; var w = miniXY(e);
+    if (Q.kind === "site") { var best = -1, bd = 1.0; Object.keys(Q.points).forEach(function (L, i) { var p = Q.points[L], d = Math.hypot(p[0] - w.x, p[1] - w.y); if (d < bd) { bd = d; best = i; } }); if (best >= 0) answer(best); }
+    else if (Q.kind === "grid") { var gx = Math.round(w.x), gy = Math.round(w.y); if (gx < 0 || gx > 10 || gy < 0 || gy > 10) return; qPicked = [gx, gy]; $("qLock").disabled = false; $("qPick").textContent = "Your pick: (" + gx + ", " + gy + ")"; beep(440, 0.05, "square", 0.02); drawMini(false); }
+  });
+  $("qLock").onclick = function () { if (qPicked) answer(-1); };
+  function answer(i) {
+    if (qDone) return; qDone = true;
+    var ok = Q.kind === "grid" ? (qPicked[0] === Q.answerPoint[0] && qPicked[1] === Q.answerPoint[1]) : i === Q.answer;
+    $("qOpts").querySelectorAll(".opt").forEach(function (b, k) { b.disabled = true; if (k === Q.answer) b.classList.add("right"); else if (k === i) b.classList.add("wrong"); });
+    $("qLock").disabled = true; S.asked++;
+    if (ok) {
+      S.right++; var bonus = 100 * S.wave; S.score += bonus; var healed = S.hearts < S.maxHearts; if (healed) S.hearts++;
+      $("qVerdict").className = "verdict good"; $("qVerdict").textContent = "Correct! +" + bonus + (healed ? " · +1 health" : "");
+      $("qTaunt").innerHTML = villainHTML(pickOne(TAUNT_WIN)); beep(660, 0.1, "triangle", 0.04); setTimeout(function () { beep(990, 0.15, "triangle", 0.04); }, 110);
+    } else {
+      S.bonusZ += 3; $("qVerdict").className = "verdict bad"; $("qVerdict").textContent = "Not quite. +3 zombies next wave.";
+      $("qTaunt").innerHTML = villainHTML(pickOne(TAUNT_LOSE)); beep(160, 0.3, "sawtooth", 0.04);
+    }
+    $("qExplain").innerHTML = Q.explain; $("qResult").hidden = false; drawMini(true); hud(); $("qNext").focus();
+  }
+  $("qNext").onclick = function () { $("qScreen").hidden = true; $("sbBtn").hidden = false; S.wave++; startScout(); };
+  function drawMini(reveal) {
+    var w = mini.width, pad = 40, sc = (w - 2 * pad) / 10, c = mctx;
+    function X(x) { return pad + x * sc; } function Y(y) { return pad + (10 - y) * sc; }
+    c.setTransform(1, 0, 0, 1, 0, 0); c.fillStyle = C.paper; c.fillRect(0, 0, w, w);
+    var pts = Q.points, labels = Object.keys(pts).filter(function (L) { return L !== "Q"; });
+    if (reveal && Q.reveal.cells) {
+      for (var py = pad; py < w - pad; py += 6) for (var px = pad; px < w - pad; px += 6) {
+        var wx = (px + 3 - pad) / sc, wy = 10 - (py + 3 - pad) / sc, bi = 0, bd = 1e9;
+        labels.forEach(function (L, i) { var p = pts[L], d = (p[0] - wx) * (p[0] - wx) + (p[1] - wy) * (p[1] - wy); if (d < bd) { bd = d; bi = i; } });
+        c.globalAlpha = 0.7; c.fillStyle = ZONE[bi % ZONE.length]; c.fillRect(px, py, 6, 6);
+      }
+      c.globalAlpha = 1;
+    }
+    c.lineWidth = 1.5;
+    for (var i = 0; i <= 10; i++) { c.strokeStyle = i % 5 === 0 ? "rgba(160,180,200,0.4)" : "rgba(160,180,200,0.16)"; c.beginPath(); c.moveTo(X(i), Y(0)); c.lineTo(X(i), Y(10)); c.stroke(); c.beginPath(); c.moveTo(X(0), Y(i)); c.lineTo(X(10), Y(i)); c.stroke(); }
+    c.strokeStyle = C.ink; c.lineWidth = 3; c.strokeRect(X(0), Y(10), 10 * sc, 10 * sc);
+    c.fillStyle = C.soft; c.font = "500 20px JetBrains Mono, monospace"; c.textAlign = "center"; c.textBaseline = "top";
+    for (var j = 0; j <= 10; j += 2) c.fillText(j, X(j), Y(0) + 6);
+    c.textAlign = "right"; c.textBaseline = "middle"; for (var k = 2; k <= 10; k += 2) c.fillText(k, X(0) - 8, Y(k));
+    if (Q.segment) { var A = pts[Q.segment[0]], B = pts[Q.segment[1]]; c.strokeStyle = C.soft; c.setLineDash([8, 8]); c.lineWidth = 3; c.beginPath(); c.moveTo(X(A[0]), Y(A[1])); c.lineTo(X(B[0]), Y(B[1])); c.stroke(); c.setLineDash([]); }
+    if (reveal && Q.reveal.circle) { var m = Q.reveal.mark; c.strokeStyle = C.marker; c.lineWidth = 3; c.setLineDash([10, 8]); c.beginPath(); c.arc(X(m[0]), Y(m[1]), Q.reveal.circle * sc, 0, 7); c.stroke(); c.setLineDash([]); }
+    if (reveal && (Q.type === "bisector" || Q.type === "boundary" || Q.type === "gradient")) {
+      var A2 = pts.A, B2 = pts.B, mx = (A2[0] + B2[0]) / 2, my = (A2[1] + B2[1]) / 2, dx = -(B2[1] - A2[1]), dy = B2[0] - A2[0], L = Math.hypot(dx, dy); dx /= L; dy /= L;
+      c.save(); c.beginPath(); c.rect(X(0), Y(10), 10 * sc, 10 * sc); c.clip(); c.strokeStyle = C.ink; c.lineWidth = 4; c.beginPath(); c.moveTo(X(mx - dx * 20), Y(my - dy * 20)); c.lineTo(X(mx + dx * 20), Y(my + dy * 20)); c.stroke(); c.restore();
+    }
+    labels.forEach(function (L, i) { var p = pts[L]; c.fillStyle = ZONE_EDGE[i % ZONE_EDGE.length]; c.strokeStyle = C.line; c.lineWidth = 3; c.beginPath(); c.arc(X(p[0]), Y(p[1]), 15, 0, 7); c.fill(); c.stroke(); c.fillStyle = C.line; c.font = "400 18px Black Ops One, Impact, sans-serif"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(L, X(p[0]), Y(p[1]) + 1); });
+    if (pts.Q) { var q = pts.Q; c.fillStyle = C.marker; c.beginPath(); c.moveTo(X(q[0]), Y(q[1]) - 14); c.lineTo(X(q[0]) + 12, Y(q[1]) + 9); c.lineTo(X(q[0]) - 12, Y(q[1]) + 9); c.closePath(); c.fill(); c.fillStyle = C.ink; c.font = "700 18px JetBrains Mono, monospace"; c.fillText("Q", X(q[0]) + 22, Y(q[1]) - 10); }
+    if (Q.survivor) { var s = Q.survivor; c.fillStyle = C.hazard; c.strokeStyle = C.line; c.lineWidth = 3; c.beginPath(); c.arc(X(s[0]), Y(s[1]), 10, 0, 7); c.fill(); c.stroke(); c.fillStyle = C.ink; c.font = "700 16px JetBrains Mono, monospace"; c.textAlign = "left"; c.fillText("survivor", X(s[0]) + 14, Y(s[1]) - 12); }
+    if (reveal && Q.reveal.mark && Q.type !== "gradient") { var mk = Q.reveal.mark; c.strokeStyle = C.marker; c.lineWidth = 4; c.beginPath(); c.moveTo(X(mk[0]) - 10, Y(mk[1]) - 10); c.lineTo(X(mk[0]) + 10, Y(mk[1]) + 10); c.moveTo(X(mk[0]) + 10, Y(mk[1]) - 10); c.lineTo(X(mk[0]) - 10, Y(mk[1]) + 10); c.stroke(); }
+    if (qPicked) { c.strokeStyle = C.line; c.fillStyle = "rgba(232,176,74,0.9)"; c.lineWidth = 3; c.beginPath(); c.arc(X(qPicked[0]), Y(qPicked[1]), 11, 0, 7); c.fill(); c.stroke(); }
+  }
+
+  function gameOver() {
+    S.phase = "over"; $("scoutBar").hidden = true;
+    var best = Math.max(loadBest(), S.score); saveBest(best);
+    $("oWave").textContent = S.wave; $("oScore").textContent = S.score; $("oBulls").textContent = S.bulls;
+    $("oQs").textContent = S.right + "/" + S.asked; $("oBest").textContent = best;
+    $("oLine").textContent = S.score >= best && S.score > 0 ? "New personal best. Screenshot it before Dr. Decay deletes it." : "Dr. Decay wins this round. Run it back.";
+    $("overScreen").hidden = false; beep(98, 0.6, "sawtooth", 0.05);
+  }
+  function start() {
+    ["titleScreen", "overScreen", "qScreen"].forEach(function (id) { $(id).hidden = true; });
+    $("sbBtn").hidden = false;
+    newRun(); startScout(); last = performance.now();
+  }
+  $("startBtn").onclick = start; $("againBtn").onclick = start;
+  var b0 = loadBest(); if (b0) $("bestLine").textContent = "Your best: " + b0;
+
+  // title backdrop: a sample town
+  newRun(); S.map = LEC.make(1); S.nests = S.map.nests; resize(); hud();
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
